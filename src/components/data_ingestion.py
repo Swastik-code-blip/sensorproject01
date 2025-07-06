@@ -58,7 +58,7 @@ class DataIngestion:
         
     def initiate_data_ingestion(self)-> Path:
 
-        logging.ninfo('Entered initiated_data_ingestion method of data_ingestion class')
+        logging.info('Entered initiated_data_ingestion method of data_ingestion class')
 
         try:
             feature_store_file_path=self.export_data_info_feature_store_file_path()

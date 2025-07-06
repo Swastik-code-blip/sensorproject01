@@ -36,7 +36,7 @@ class TrainingPipeline:
     def run_pipeline(self):
         try:
             feature_store_file_path=self.start_data_ingestion()
-            train_arr,test_arr,preprocessor_path=self.datatransformation.initiate_data_transformation()
+            train_arr,test_arr,preprocessor_path=self.start_data_transformation(feature_store_file_path())
             r2square=self.start_model_traning(train_arr,test_arr)
 
             print("traning compleates . Trained model score: ",r2square )
