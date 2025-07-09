@@ -5,8 +5,7 @@ AWS_S3_BUCKET_NAME = "wafer-fault"
 MONGO_DATABASE_NAME = "pwskills"
 MONGO_COLLECTION_NAME = "waferfault"
 
-
-TARGET_COLUMN = "quality"
+TARGET_COLUMN = "Good/Bad"
 MONGO_DB_URL="mongodb+srv://swastikgautam76:UQgIw7LHe2t8SiYz@cluster0.obktxkg.mongodb.net/?retryWrites=true&w=majority"
 
 

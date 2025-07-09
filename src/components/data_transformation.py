@@ -1,86 +1,86 @@
-import sys
 import os
+import sys
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import RobustScaler, FunctionTransformer
-from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-
-from src.constant import *
 from src.exception import CustomException
-from src.logger import logging
-from src.utils.main_utils import MainUtils
-from dataclasses import dataclass
-
-
-@dataclass
-class DataTransformationConfig:
-    artifact_dir = os.path.join(artifact_folder)
-    transformed_train_file_path = os.path.join(artifact_dir, 'train.npy')
-    transformed_test_file_path = os.path.join(artifact_dir, 'test.npy')
-    transformed_object_file_path = os.path.join(artifact_dir, 'preprocessor.pkl')
-
+from src.logger import logging as lg
+import pickle
 
 class DataTransformation:
     def __init__(self, feature_store_file_path):
         self.feature_store_file_path = feature_store_file_path
-        self.data_transformation_config = DataTransformationConfig()
-        self.utils = MainUtils()
-
-    @staticmethod
-    def get_data(feature_store_file_path: str) -> pd.DataFrame:
-        try:
-            logging.info(f"Loading data from {feature_store_file_path}")
-            data = pd.read_csv(feature_store_file_path)
-            logging.info(f"Original columns: {data.columns.tolist()}")
-            data.rename(columns={"Good/Bad": TARGET_COLUMN}, inplace=True)
-            logging.info(f"Columns after rename: {data.columns.tolist()}")
-            return data
-        except Exception as e:
-            raise CustomException(e, sys)
-
-    def get_data_transformer_object(self):
-        try:
-            imputer_step = ('imputer', SimpleImputer(strategy='constant', fill_value=0))
-            scaler_step = ('scaler', RobustScaler())
-            preprocessor = Pipeline(
-                steps=[
-                    imputer_step,
-                    scaler_step
-                ]
-            )
-            return preprocessor
-        except Exception as e:
-            raise CustomException(e, sys)
+        self.artifact_folder = "artifacts"
+        self.target_column = "Good/Bad"
 
     def initiate_data_transformation(self):
-        logging.info("Entered initiate_data_transformation method of DataTransformation class")
         try:
-            dataframe = self.get_data(feature_store_file_path=self.feature_store_file_path)
-            logging.info(f"DataFrame columns: {dataframe.columns.tolist()}")
+            lg.info(f"Loading data from {self.feature_store_file_path}")
+            if not os.path.exists(self.feature_store_file_path):
+                raise FileNotFoundError(f"CSV file not found at {self.feature_store_file_path}")
+            
+            with open(self.feature_store_file_path, 'r') as file:
+                lg.info("First 5 lines of CSV:")
+                for i, line in enumerate(file):
+                    if i < 5:
+                        lg.info(line.strip())
+                    if i >= 5:
+                        break
 
-            # Validate target column
-            if TARGET_COLUMN not in dataframe.columns:
-                raise ValueError(f"Target column '{TARGET_COLUMN}' not found in DataFrame. Available columns: {dataframe.columns.tolist()}")
+            df = pd.read_csv(self.feature_store_file_path, header=0)
+            lg.info("DataFrame columns: %s", df.columns.tolist())
+            
+            if df.columns[0] == '0' or isinstance(df.columns[0], int):
+                lg.warning("Numeric columns detected. Assigning expected columns.")
+                expected_columns = [f"Sensor-{i+1}" for i in range(df.shape[1]-1)] + [self.target_column]
+                if df.shape[1] != len(expected_columns):
+                    raise CustomException(f"Column count mismatch. Expected {len(expected_columns)}, got {df.shape[1]}", sys)
+                df.columns = expected_columns
+                lg.info("Assigned columns: %s", df.columns.tolist())
 
-            X = dataframe.drop(columns=TARGET_COLUMN)
-            y = np.where(dataframe[TARGET_COLUMN] == -1, 0, 1)
+            if self.target_column not in df.columns:
+                raise CustomException(f"Target column '{self.target_column}' not found in DataFrame. Available columns: {list(df.columns)}", sys)
 
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+            lg.info("First few rows:\n%s", df.head().to_string())
+            numeric_columns = df.select_dtypes(include=[np.number]).columns
+            df[numeric_columns] = df[numeric_columns].fillna(df[numeric_columns].mean())
 
-            preprocessor = self.get_data_transformer_object()
-            X_train_scaled = preprocessor.fit_transform(X_train)
-            X_test_scaled = preprocessor.transform(X_test)
+            X = df.drop(columns=[self.target_column])
+            y = df[self.target_column].map({1: 1, -1: 0})
 
-            preprocessor_path = self.data_transformation_config.transformed_object_file_path
-            os.makedirs(os.path.dirname(preprocessor_path), exist_ok=True)
-            self.utils.save_object(file_path=preprocessor_path, obj=preprocessor)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
-            train_arr = np.c_[X_train_scaled, np.array(y_train)]
-            test_arr = np.c_[X_test_scaled, np.array(y_test)]
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_scaled, y, test_size=0.2, random_state=42
+            )
 
-            return (train_arr, test_arr, preprocessor_path)
+            train_arr = np.c_[X_train, y_train]
+            test_arr = np.c_[X_test, y_test]
+
+            train_path = os.path.join(self.artifact_folder, "train.csv")
+            test_path = os.path.join(self.artifact_folder, "test.csv")
+            pd.DataFrame(train_arr, columns=X.columns.tolist() + [self.target_column]).to_csv(train_path, index=False)
+            pd.DataFrame(test_arr, columns=X.columns.tolist() + [self.target_column]).to_csv(test_path, index=False)
+
+            scaler_path = os.path.join(self.artifact_folder, "scaler.pkl")
+            with open(scaler_path, "wb") as file:
+                pickle.dump(scaler, file)
+
+            lg.info(f"Data transformation completed. Train path: {train_path}, Test path: {test_path}, Scaler path: {scaler_path}")
+            return train_arr, test_arr, scaler_path
+
         except Exception as e:
-            raise CustomException(e, sys) from e
+            lg.error(f"Error in data transformation: {str(e)}")
+            raise CustomException(e, sys)
+
+if __name__ == "__main__":
+    try:
+        data_path = os.path.join("artifacts", "wafer_fault.csv")
+        transformer = DataTransformation(feature_store_file_path=data_path)
+        train_arr, test_arr, scaler_path = transformer.initiate_data_transformation()
+        lg.info(f"Transformation complete. Train shape: {train_arr.shape}, Test shape: {test_arr.shape}, Scaler: {scaler_path}")
+    except Exception as e:
+        lg.error(f"Error in main: {str(e)}")
+        raise CustomException(e, sys)
