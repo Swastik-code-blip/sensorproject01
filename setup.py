@@ -3,7 +3,7 @@ from typing import List
 
 
  #just update
- 
+ #Just 2 up-to-date
 HYPEN_E_DOT='-e.'
 
 def get_requirements(file_path:str)->List[str]:
